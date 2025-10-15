@@ -1,0 +1,100 @@
+@import url("https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@300;400;600;700&display=swap");
+
+html,
+body,
+#root,
+.app,
+.content {
+  height: 100%;
+  width: 100%;
+  font-family: "Source Sans Pro", sans-serif;
+}
+
+/* Para que el footer se ponga debajo */
+.map_footer{
+  display: flex;
+  flex-direction: column;
+}
+
+.app {
+  display: flex;
+  position: relative;
+}
+
+/*Track*/
+::-webkit-scrollbar-track {
+  background: #e0e0e0;
+}
+
+/* Handle */
+::-webkit-scrollbar-thumb {
+  background: #888;
+}
+
+/* Handle on hover */
+::-webkit-scrollbar-track:hover {
+  background: #555;
+}
+
+::selection {
+  background: rgb(62, 62, 62);
+  color: white;
+}
+
+
+/* footer.css */
+.footer-container a:hover {
+  color: #F43653;
+}
+
+.footer-container a {
+  transition:all .5s ease;
+  text-decoration: none;
+  color: white;
+}
+
+.footer-links {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.footer-links li {
+  margin: 5px 0;
+}
+
+/* Estilos opcionales para imágenes de redes sociales */
+.footer-social img {
+  width: 24px;
+  height: 24px;
+}
+
+/* Si necesitas mantener el borde superior de la sección inferior del footer */
+.footer-bottom a {
+  color: #bbb;
+  text-decoration: none;
+  transition:all .5s ease;
+}
+
+.footer-bottom a:hover {
+  color: #F43653;
+}
+.sede-electronica{
+  font-size: 12px; 
+  line-height: 12px; 
+  letter-spacing: -0.28px; 
+  border-radius: 5px; 
+  border: 1px solid rgba(255, 255, 255, 50%); 
+  float: left; 
+  padding: 10px 20px; 
+  transition:all .5s ease;
+}
+.sede-electronica:hover{
+  background: #F43653;
+  border: 1px solid #F43653; 
+  color: #fff;
+}
+
+.sede-electronica a:hover{
+  color: #fff;
+}

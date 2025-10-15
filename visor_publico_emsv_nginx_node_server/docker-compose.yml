@@ -1,0 +1,17 @@
+
+services:
+  node-server-viso-publico-remsv:
+    container_name: node_docker_visor_publico_emsv_container
+    build: 
+      context: ./imagen_js_server/ # directorio donde se encuentra el dockerfile
+      dockerfile: Dockerfile # nombre del dockerfile
+      args:
+        - NAME_DIRRECTORY=visor_publico_emsv_server # puedes ajustar esto según sea necesario
+        - NODE_ENV=production # puede ser localhost o production
+        - PORT=3040
+    image: node-docker-visor-publico-emsv-image # imagen oficial de Node.js; reemplázala con la tuya si tienes una personalizada
+    working_dir: /app/visor_publico_emsv_server/ # directorio de trabajo
+    command: ["node", "server.js"] # el comando para ejecutar tu servidor Node.js
+    ports:
+      - "3040:3040" 
+
