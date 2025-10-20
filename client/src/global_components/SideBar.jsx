@@ -70,6 +70,12 @@ function SideBar() {
                 Inicio
               </MenuItem>
               <MenuItem
+                style={{ color: colors.gray[100] }}
+                icon={<MapIcon />}
+                component={<Link to="/mapas" />}>
+                Mapa Solar
+              </MenuItem>
+              <MenuItem
                 style={{
                   color: colors.gray[100],
                 }}
@@ -92,12 +98,6 @@ function SideBar() {
                 rel="noopener noreferrer" // Añade seguridad en enlaces externos
               >
                 Contacto
-              </MenuItem>
-              <MenuItem
-                style={{ color: colors.gray[100] }}
-                icon={<MapIcon />}
-                component={<Link to="/mapas" />}>
-                Mapas
               </MenuItem>
             </Box>
 

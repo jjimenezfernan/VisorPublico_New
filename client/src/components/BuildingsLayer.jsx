@@ -8,7 +8,7 @@ const baseStyle = (clickable) => ({
   color: "#ff6969ff",
   weight: 0.5,
   opacity: 0.25,
-  fillColor: "#ff6969ff",
+  fillColor: "#ecb7b7ff",
   fillOpacity: clickable ? 0.12 : 0.08,
 });
 
