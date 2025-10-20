@@ -22,13 +22,17 @@ import "leaflet-draw";
 import * as turf from "@turf/turf";
 
 import { tokens } from "../data/theme";
-// newMap.jsx
+// newMap.jsx 
 // ...
 import SearchBoxEMSV from "../components/SearchBoxEMSV"; // ← ruta paralela a MapEMSV/MapZoomProvider
 // ...
 import StaticBuildingsLayer from "../components/BuildingsLayer";
 
 
+import AdditionalPanel from "../components/AdditionalPanel"; 
+import Grid from "@mui/material/Grid";
+import Stack from "@mui/material/Stack";
+import MapLoadingOverlay from "../components/PantallaCarga"; 
 
 const API_BASE = "http://127.0.0.1:8000";
 import { DIRECTION } from "../data/direccion_server";
@@ -88,8 +92,24 @@ function BboxWatcher({ onBboxChange }) {
 
 
 
+// Reemplaza tu Legend por este:
+function Legend({ minZoom = 17, maxZoom = 18 }) {
+  const map = useMap();
+  const [visible, setVisible] = useState(false);
 
-function Legend() {
+  useEffect(() => {
+    if (!map) return;
+    const check = () => {
+      const z = map.getZoom();
+      setVisible(z >= minZoom && z <= maxZoom);
+    };
+    map.on("zoomend", check);
+    check(); // estado inicial
+    return () => map.off("zoomend", check);
+  }, [map, minZoom, maxZoom]);
+
+  if (!visible) return null;
+
   return (
     <div style={{
       position: "absolute", right: 12, bottom: 12, zIndex: 1000,
@@ -112,6 +132,114 @@ function Legend() {
 
 
 
+
+
+
+// Indicador de zoom + sugerencia para sombras (versión top-right)
+function ZoomStatus({ minZoom = 17, maxZoom = 18 }) {
+  const map = useMap();
+  const [z, setZ] = useState(() => map?.getZoom?.() ?? 0);
+
+  useEffect(() => {
+    if (!map) return;
+    const update = () => setZ(map.getZoom());
+    map.on("zoomend", update);
+    update(); // estado inicial
+    return () => map.off("zoomend", update);
+  }, [map]);
+
+  const inRange = z >= minZoom && z <= maxZoom;
+  const needText =
+    z < minZoom
+      ? `Acércate ${minZoom - z} nivel${minZoom - z === 1 ? "" : "es"} para ver sombras`
+      : z > maxZoom
+      ? `Aléjate ${z - maxZoom} nivel${z - maxZoom === 1 ? "" : "es"} para ver sombras`
+      : "Sombras activas en este zoom";
+
+  const targetZoom = z < minZoom ? minZoom : z > maxZoom ? maxZoom : z;
+  const badgeBg = inRange ? "#10b981" /* verde */ : "#f59e0b" /* ámbar */;
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: 12,
+        right: 12,
+        zIndex: 1000,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-end",
+        gap: 8,
+      }}
+    >
+      {/* Nivel de zoom actual */}
+      <div
+        style={{
+          background: "white",
+          borderRadius: 8,
+          boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+          padding: "6px 10px",
+          font: "12px system-ui",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          minWidth: 90,
+          justifyContent: "flex-end",
+        }}
+      >
+        <span
+          style={{
+            display: "inline-block",
+            width: 10,
+            height: 10,
+            borderRadius: 9999,
+            background: badgeBg,
+          }}
+        />
+        <strong>Zoom:</strong> {z}
+      </div>
+
+      {/* Mensaje de ayuda */}
+      <div
+        style={{
+          background: "white",
+          borderRadius: 8,
+          boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+          padding: "8px 10px",
+          font: "12px system-ui",
+          textAlign: "right",
+          maxWidth: 230,
+        }}
+      >
+        <div style={{ fontWeight: 600, marginBottom: 4 }}>Sombras</div>
+        <div style={{ marginBottom: inRange ? 0 : 6 }}>
+          {inRange ? "Sombras activas (niveles 17–18)." : needText}
+        </div>
+        {!inRange && (
+          <button
+            onClick={() =>
+              map.flyTo(map.getCenter(), targetZoom, { duration: 0.6 })
+            }
+            style={{
+              border: "none",
+              background: "#3b82f6",
+              color: "white",
+              borderRadius: 6,
+              padding: "6px 10px",
+              cursor: "pointer",
+            }}
+          >
+            Ir a zoom {targetZoom}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+
+
 function ShadowsLayer({ bbox, minZoom = 16, maxZoom = 19 }) {
   const map = useMap();
   const currentRef = useRef(null);
@@ -131,10 +259,12 @@ function ShadowsLayer({ bbox, minZoom = 16, maxZoom = 19 }) {
     if (!map.getPane(paneName)) {
       map.createPane(paneName);
       const p = map.getPane(paneName);
-      p.style.zIndex = 420;
+      p.style.zIndex = 420; // Below buildings (440)
       p.style.transition = `opacity ${PANE_FADE_MS}ms ease`;
       p.style.mixBlendMode = "multiply";
       p.style.opacity = "1";
+      // CRITICAL: This prevents the pane from capturing pointer events
+      p.style.pointerEvents = "none"; // ✅ Shadows should NOT capture clicks
     }
     if (!rendererRef.current) {
       rendererRef.current = L.canvas({ padding: 0.5 });
@@ -228,6 +358,7 @@ function ShadowsLayer({ bbox, minZoom = 16, maxZoom = 19 }) {
               fillOpacity: 0.9,
               renderer: rendererRef.current,
               pane: paneName,
+              interactive: false,
             });
           },
         });
@@ -283,6 +414,23 @@ function ShadowsLayer({ bbox, minZoom = 16, maxZoom = 19 }) {
       nextRef.current = null;
       currentRef.current = null;
     };
+  }, [map]);
+
+  useEffect(() => {
+    if (!map) return;
+    if (!map.getPane(paneName)) {
+      map.createPane(paneName);
+      const p = map.getPane(paneName);
+      p.style.zIndex = 420; // Below buildings (440)
+      p.style.transition = `opacity ${PANE_FADE_MS}ms ease`;
+      p.style.mixBlendMode = "multiply";
+      p.style.opacity = "1";
+      // CRITICAL: This prevents the pane from capturing pointer events
+      p.style.pointerEvents = "none"; // ✅ Already in your code - good!
+    }
+    if (!rendererRef.current) {
+      rendererRef.current = L.canvas({ padding: 0.5 });
+    }
   }, [map]);
 
   return null;
@@ -384,6 +532,10 @@ function SetupLimitPanes() {
 
 
 export default function NewMap() {
+  const [shadowsVisible, setShadowsVisible] = useState(true);
+
+  const [buildingsLoaded, setBuildingsLoaded] = useState(false);
+
   const selectionRef = useRef(null);
   const mapRef = useRef(null); 
 
@@ -400,13 +552,30 @@ export default function NewMap() {
   const [geoLimites, setGeoLimites] = useState(null);
   const [geoConViv, setGeoConViv] = useState(null);
   const [geoSinViv, setGeoSinViv] = useState(null);
-  const [jsonRef, setJsonRef] = useState(null); // 👈 Ahora está declarado ANTES de los useMemo
+  const [jsonRef, setJsonRef] = useState(null); 
 
   // ---------- finder UI state ----------
   const [street, setStreet] = useState("");
   const [portal, setPortal] = useState("");
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
+
+  // --- estadísticas del edificio seleccionado ---
+  const [bStats, setBStats] = useState(null);
+  const [bStatsLoading, setBStatsLoading] = useState(false);
+  const [bStatsError, setBStatsError] = useState("");
+
+  async function fetchZonalStats(geometry) {
+    const res = await fetch(`${API_BASE}/shadows/zonal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ geometry }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  }
+
+
 
   // fetch EMSV on mount
   useEffect(() => {
@@ -481,7 +650,7 @@ export default function NewMap() {
 
     if (!map.getPane("selection")) {
       map.createPane("selection");
-      map.getPane("selection").style.zIndex = 450;
+      map.getPane("selection").style.zIndex = 500;
     }
     if (selectionRef.current) {
       map.removeLayer(selectionRef.current);
@@ -565,14 +734,14 @@ export default function NewMap() {
       const feature = data.feature;
       const p = feature.properties || {};
       
-      const html = `
-        <div style="font: 13px system-ui">
-          <div style="font-weight:700;margin-bottom:4px;">${calle.toUpperCase()} ${numero}</div>
-          <div><b>Referencia:</b> ${p.reference ?? data.reference}</div>
-        </div>
-      `;
-      
-      highlightSelectedFeature(mapRef.current, feature, html);
+      //const html = `
+      //  <div style="font: 13px system-ui">
+      //    <div style="font-weight:700;margin-bottom:4px;">${calle.toUpperCase()} ${numero}</div>
+      //    <div><b>Referencia:</b> ${p.reference ?? data.reference}</div>
+      //  </div>
+      //`;
+      //highlightSelectedFeature(mapRef.current, feature, html);
+      highlightSelectedFeature(mapRef.current, feature)
       
     } catch (e) {
       console.error(e);
@@ -594,161 +763,227 @@ export default function NewMap() {
     [40.279393, -3.766208],
     [40.338090, -3.646864],
   ];
+
+  const handleBuildingClick = async (feature) => {
+    // Pintar selección
+    highlightSelectedFeature(mapRef.current, feature);
+
+    // Calcular estadísticas de sombras
+    try {
+      setBStatsError("");
+      setBStatsLoading(true);
+      setBStats(null);
+
+      let geom = feature?.geometry ?? feature;
+      if (geom?.type === "Point" && Array.isArray(geom.coordinates)) {
+        const [x, y] = geom.coordinates;
+        const circle = turf.circle([x, y], 8, { units: "meters", steps: 48 });
+        geom = circle.geometry;
+      }
+      
+      const stats = await fetch(`${API_BASE}/shadows/zonal`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ geometry: geom }),
+      }).then(r => r.json());
+
+      setBStats(stats);
+    } catch (e) {
+      console.error(e);
+      setBStatsError("No se pudieron calcular las estadísticas de sombras para este edificio.");
+    } finally {
+      setBStatsLoading(false);
+    }
+  };
   
+
+
+
   return (
-    <>
-      <SubUpBar
-        title={"Visor de Datos Públicos de Vivienda"}
-        crumbs={[["Inicio", "/"], ["Visor EPIU", "/visor-epiu"]]}
-        info={{ title: "Visor de Datos Públicos de Vivienda", description: (<Typography />) }}
-      />
-      <Box m="10px">
-        <Box
-          display="grid"
-          gridTemplateColumns="repeat(12, 1fr)"
-          gridAutoRows="calc((100vh - 60px - 40px - 20px - 10px) / 8.8)"
-          gap="10px"
-        >
-          {/* MAPA - 8 columns, 8 rows */}
-          <Box
-            gridColumn="span 8"
-            gridRow="span 8"
-            bgcolor="#f9fafb"
-            borderRadius="10px"
-            overflow="hidden"
-            position="relative"
-          > 
-            <Legend />
-            <MapContainer
-              center={[40.307927, -3.732297]}
-              minZoom={14}
-              maxZoom={18}  
-              zoom={mapProps.zoom}
-              maxBounds={bounds}    
-              maxBoundsViscosity={1.0} 
-              preferCanvas={true}
-              renderer={L.canvas({ padding: 0.5 })}
-              style={{ height: "100%", width: "100%", background: "#f3f4f6" }}
-            >
-              <StaticBuildingsLayer apiBase={API_BASE} />
-              <BindMapRef mapRef={mapRef} />
-              <SetupLimitPanes />
-              <BboxWatcher onBboxChange={setBbox} />
- 
-              <TileLayer
-                url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-                attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-                subdomains={["a", "b", "c", "d"]}
-                maxZoom={19}
-                opacity={0.8}
-                zIndex={0}
-              />
-              <ShadowsLayer bbox={bbox}  minZoom={17} maxZoom={18} />
-              <ZonalDrawControl onStats={(s) => console.log("Zonal stats:", s)} />
-           
-              {geoLimites && (
-                <>
-                  {/* Trazo discontinuo oscuro (encima) */}
-                  <LayerGeoJSON
-                    fc={geoLimites}
-                    style={{
-                      pane: "limits-dash",
-                      color: "#c5c5c5ff",      
-                      weight: 2,
-                      opacity: 1,
-                      dashArray: "6 6",      
-                      fillOpacity: 0,
-                      interactive: false,
-                      lineCap: "butt",
-                      lineJoin: "round",
-                      smoothFactor: 1.2,
+      <>
+        <SubUpBar
+          title={"Visor de Datos Públicos de Vivienda"}
+          crumbs={[["Inicio", "/"], ["Visor EPIU", "/visor-epiu"]]}
+          info={{ title: "Visor de Datos Públicos de Vivienda", description: (<Typography />) }}
+        />
+        <Box m="10px">
+          <Grid container spacing={2}>
+            {/* Columna izquierda: MAPA (xs=12, md=8) */}
+            <Grid item xs={12} md={8}>
+              <Box
+                bgcolor="#f9fafb"
+                borderRadius="10px"
+                overflow="hidden"
+                position="relative"
+                sx={{
+                  height: { xs: "60vh", md: "calc(100vh - 160px)" },
+                  minHeight: 380,
+                }}
+              >
+                {/* 👇 ADD THIS: Toggle button for shadows */}
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: 12,
+                    left: 12,
+                    zIndex: 1000,
+                  }}
+                >
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={() => setShadowsVisible(!shadowsVisible)}
+                    sx={{
+                      backgroundColor: shadowsVisible ? "#3b82f6" : "#6b7280",
+                      color: "white",
+                      textTransform: "none",
+                      boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+                      "&:hover": {
+                        backgroundColor: shadowsVisible ? "#2563eb" : "#4b5563",
+                      },
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      minWidth: "140px",
+                    }}
+                  >
+                    {shadowsVisible ? "🌑 Ocultar sombras" : "☀️ Mostrar sombras"}
+                  </Button>
+                </Box>
+
+                <MapContainer
+                  center={[40.307927, -3.732297]}
+                  minZoom={14}
+                  maxZoom={18}
+                  zoom={mapProps.zoom}
+                  maxBounds={bounds}
+                  maxBoundsViscosity={1.0}
+                  style={{ height: "100%", width: "100%", background: "#f3f4f6" }}
+                >
+                  <MapLoadingOverlay loading={!buildingsLoaded} />
+                  <StaticBuildingsLayer 
+                    apiBase={API_BASE} 
+                    onLoadComplete={() => setBuildingsLoaded(true)}
+                    onBuildingClick={handleBuildingClick}
+                    clickable={!shadowsVisible} 
+                  />
+                  <BindMapRef mapRef={mapRef} />
+                  <SetupLimitPanes />
+                  <BboxWatcher onBboxChange={setBbox} />
+                  <TileLayer
+                    url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+                    attribution='&copy; <a href="https://carto.com/">CARTO</a>'
+                    subdomains={["a", "b", "c", "d"]}
+                    maxZoom={19}
+                    opacity={0.8}
+                    zIndex={0}
+                  />
+                  
+                  {}
+                  {shadowsVisible && (
+                    <>
+                      <ShadowsLayer bbox={bbox} minZoom={17} maxZoom={18} />
+                      <Legend minZoom={17} maxZoom={18} />
+                      <ZoomStatus minZoom={17} maxZoom={18} />
+                    </>
+                  )}
+                  
+                  <ZonalDrawControl onStats={(s) => console.log("Zonal stats:", s)} />
+                  {geoLimites && (
+                    <LayerGeoJSON
+                      fc={geoLimites}
+                      style={{
+                        pane: "limits-dash",
+                        color: "#c5c5c5ff",
+                        weight: 2,
+                        opacity: 1,
+                        dashArray: "6 6",
+                        fillOpacity: 0,
+                        interactive: false,
+                        lineCap: "butt",
+                        lineJoin: "round",
+                        smoothFactor: 1.2,
+                      }}
+                    />
+                  )}
+                </MapContainer>
+              </Box>
+            </Grid>
+
+            {/* Rest of your component stays the same... */}
+            <Grid item xs={12} md={4}>
+              <Stack spacing={2} sx={{ height: "100%" }}>
+                <Box
+                  sx={{
+                    backgroundColor: "#f3f4f6",
+                    borderRadius: "10px",
+                    p: "0.75rem 1rem",
+                  }}
+                >
+                  <Typography
+                    variant="h6"
+                    color="#fff"
+                    fontWeight={600}
+                    sx={{
+                      background: colors.blueAccent[400],
+                      borderRadius: "6px",
+                      px: "0.6rem",
+                      py: "0.35rem",
+                      mb: 1,
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    Buscador de Direcciones
+                  </Typography>
+
+                  <SearchBoxEMSV
+                    jsonRef={jsonRef}
+                    loading={loadingEmsv}
+                    apiBase={API_BASE}
+                    onFeature={async (feature) => {
+                      highlightSelectedFeature(mapRef.current, feature);
+
+                      try {
+                        setBStatsError("");
+                        setBStatsLoading(true);
+                        setBStats(null);
+
+                        let geom = feature?.geometry ?? feature;
+                        if (geom?.type === "Point" && Array.isArray(geom.coordinates)) {
+                          const [x, y] = geom.coordinates;
+                          const circle = turf.circle([x, y], 8, { units: "meters", steps: 48 });
+                          geom = circle.geometry;
+                        }
+                        const stats = await fetch(`${API_BASE}/shadows/zonal`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ geometry: geom }),
+                        }).then(r => r.json());
+
+                        setBStats(stats);
+                      } catch (e) {
+                        console.error(e);
+                        setBStatsError("No se pudieron calcular las estadísticas de sombras para este edificio.");
+                      } finally {
+                        setBStatsLoading(false);
+                      }
+                    }}
+                    onReset={() => {
+                      clearSelectionAndPopup();
+                      setBStats(null);
+                      setBStatsError("");
+                      setBStatsLoading(false);
                     }}
                   />
-                </>
-              )}
+                </Box>
 
-            </MapContainer>
-          </Box>
-            
-        {/* Buscador de direcciones */}
-        <Box
-        gridColumn="span 4"
-        gridRow="span 2"
-        sx={{
-          backgroundColor: colors.gray[900],
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "stretch",
-          pt: "100px",
-          py: "5px",
-          px: "1rem",
-          borderRadius: "10px",
-          pb: 1, 
-          gap: 1,  
-        }}
-      >
-        <Typography
-          variant="h6"
-          color="#fff"
-          fontWeight={600}
-          px="0.3rem"
-          sx={{
-            background: colors.blueAccent[400],
-            borderRadius: "5px",          
-            // si prefieres margen en vez de gap: mb: 1,
-          }}
-        >
-          Buscador de Direcciones
-        </Typography>
-
-        <SearchBoxEMSV
-          jsonRef={jsonRef}
-          loading={loadingEmsv}
-          apiBase={API_BASE}
-          onFeature={(feature, html) => {
-            highlightSelectedFeature(mapRef.current, feature, html);
-          }}
-          onReset={clearSelectionAndPopup} 
-        />
-      </Box>
-
-        
-          {/* PANEL: Additional Panel 1 */}
-          <Box
-            gridColumn="span 4"
-            gridRow="span 2"
-            bgcolor="#f3f4f6"
-            display="flex"
-            alignItems="stretch"
-            justifyContent="space-evenly"
-            py="5px"
-            px="1rem"
-            flexDirection="column"
-            borderRadius="10px"
-          >
-            <Typography
-              variant="h6"
-              color="#fff"
-              fontWeight={600}
-              px="0.3rem"
-              sx={{ background: colors.blueAccent[400], borderRadius: "5px" }}
-            >
-              Panel Adicional 1
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Contenido del panel...
-            </Typography>
-          </Box>
-          
-
-       
-
-          
+                <AdditionalPanel stats={bStats} loading={bStatsLoading} error={bStatsError} />
+              </Stack>
+            </Grid>
+          </Grid>
         </Box>
-      </Box>
-    </>
-  );
-}
+      </>
+    );
+  }
 
 function LayerGeoJSON({ fc, style }) {
   const map = useMap();

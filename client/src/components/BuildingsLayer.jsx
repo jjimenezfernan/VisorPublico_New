@@ -3,54 +3,116 @@ import { useEffect, useRef } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
 
-export default function StaticBuildingsLayer({ apiBase = "http://127.0.0.1:8000" }) {
+// at top of component file (helpers)
+const baseStyle = (clickable) => ({
+  color: "#ff6969ff",
+  weight: 0.5,
+  opacity: 0.25,
+  fillColor: "#ff6969ff",
+  fillOpacity: clickable ? 0.12 : 0.08,
+});
+
+const hoverStyle = {
+  color: "#ff564dff",      // border on hover
+  weight: 1,           // thin outline so it “pops”
+  opacity: 0.25,
+  fillColor: "#ff9f0a",
+  fillOpacity: 0.28,
+};
+
+
+
+export default function StaticBuildingsLayer({
+  apiBase = "http://127.0.0.1:8000",
+  onLoadComplete,
+  onBuildingClick,
+  clickable = false,
+}) {
   const map = useMap();
   const layerRef = useRef(null);
+  const dataRef = useRef(null);
+  const rendererRef = useRef(null);
+  const paneName = "buildings";
 
+  // Create pane + renderer once
   useEffect(() => {
-    let cancelled = false;
-    const paneName = "buildings";
-
-    // pane dedicado (debajo de selección)
     if (!map.getPane(paneName)) {
       map.createPane(paneName);
       const p = map.getPane(paneName);
-      p.style.zIndex = 350;
+      p.style.zIndex = 440;
       p.style.transition = "opacity 180ms ease";
     }
+    if (!rendererRef.current) {
+      rendererRef.current = L.canvas({ padding: 0.5, pane: paneName });
+    }
+  }, [map]);
 
+  // Fetch once
+  useEffect(() => {
+    let cancelled = false;
     (async () => {
-      // 👉 sin bbox: trae todo (tu API ya lo permite con LIMIT grande)
       const res = await fetch(`${apiBase}/buildings/features?limit=200000&offset=0`);
       if (!res.ok) return;
       const fc = await res.json();
       if (cancelled) return;
-
-      // limpia si había algo previo
-      if (layerRef.current) { map.removeLayer(layerRef.current); layerRef.current = null; }
-
-      const lyr = L.geoJSON(fc, {
-        pane: paneName,
-        renderer: L.canvas({ padding: 0.5 }),
-        interactive: false,               // mejora rendimiento si no necesitas clic sobre capa base
-        style: () => ({
-          color: "#ff6969ff",               // borde
-          weight: 0,                    // grosor del borde
-          opacity: 0.0,
-          fillColor: "#ff6969ff",
-          fillOpacity: 0.1,
-        }),
-      });
-
-      lyr.addTo(map);
-      layerRef.current = lyr;
+      dataRef.current = fc;
+      rebuildLayer();
+      onLoadComplete?.();
     })();
+    return () => { cancelled = true; removeLayer(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiBase, map]);
 
-    return () => {
-      cancelled = true;
-      if (layerRef.current) { map.removeLayer(layerRef.current); layerRef.current = null; }
-    };
-  }, [map, apiBase]);
+  // React to clickable toggle
+  useEffect(() => {
+    const p = map.getPane(paneName);
+    if (p) p.style.pointerEvents = clickable ? "auto" : "none"; // now this works (separate canvas)
+    if (dataRef.current) rebuildLayer(); // rebuild to attach/detach handlers
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clickable]);
+
+  function removeLayer() {
+    if (layerRef.current) {
+      map.removeLayer(layerRef.current);
+      layerRef.current = null;
+    }
+  }
+
+  function rebuildLayer() {
+    removeLayer();
+    if (!dataRef.current) return;
+
+
+
+    const lyr = L.geoJSON(dataRef.current, {
+      pane: paneName,
+      renderer: rendererRef.current,
+      interactive: clickable,
+      style: () => baseStyle(clickable),
+      onEachFeature: (feature, layer) => {
+        if (!clickable) return;
+
+        // click
+        if (onBuildingClick) layer.on("click", () => onBuildingClick(feature));
+
+        // hover – visual + cursor + bring to front
+        layer.on("mouseover", () => {
+          layer.setStyle(hoverStyle);
+          layer.bringToFront?.();                 // works on Canvas too
+          map.getContainer().style.cursor = "pointer";
+        });
+
+        layer.on("mouseout", () => {
+          layer.setStyle(baseStyle(true));        // restore base
+          map.getContainer().style.cursor = "";
+        });
+      },
+    });
+
+
+    lyr.addTo(map);
+    layerRef.current = lyr;
+  }
 
   return null;
 }
